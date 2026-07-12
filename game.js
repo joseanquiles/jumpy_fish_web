@@ -185,19 +185,31 @@
     state.rocks = state.rocks.filter((r) => r.x + ROCK_W > -10);
   }
 
-  function checkCollisions() {
-    const fx = FISH_X + HITBOX_INSET;
-    const fy = state.fish.y + HITBOX_INSET;
-    const fw = FISH_W - HITBOX_INSET * 2;
-    const fh = FISH_H - HITBOX_INSET * 2;
+  // Closest-point test: clamp the ellipse center into the rect, then check
+  // whether that closest point falls inside the ellipse.
+  function ellipseIntersectsRect(cx, cy, rx, ry, x0, y0, x1, y1) {
+    const closestX = Math.max(x0, Math.min(cx, x1));
+    const closestY = Math.max(y0, Math.min(cy, y1));
+    const dx = (closestX - cx) / rx;
+    const dy = (closestY - cy) / ry;
+    return dx * dx + dy * dy <= 1;
+  }
 
-    if (state.fish.y <= 0 || state.fish.y + FISH_H >= LH) {
+  function checkCollisions() {
+    const cx = FISH_X + FISH_W / 2;
+    const cy = state.fish.y + FISH_H / 2;
+    const rx = (FISH_W - HITBOX_INSET * 2) / 2;
+    const ry = (FISH_H - HITBOX_INSET * 2) / 2;
+
+    if (cy - ry <= 0 || cy + ry >= LH) {
       return "boundary";
     }
 
     for (const rock of state.rocks) {
-      if (fx + fw < rock.x || fx > rock.x + ROCK_W) continue;
-      if (fy < rock.gapTop || fy + fh > rock.gapBottom) {
+      if (ellipseIntersectsRect(cx, cy, rx, ry, rock.x, 0, rock.x + ROCK_W, rock.gapTop)) {
+        return "rock";
+      }
+      if (ellipseIntersectsRect(cx, cy, rx, ry, rock.x, rock.gapBottom, rock.x + ROCK_W, LH)) {
         return "rock";
       }
     }
