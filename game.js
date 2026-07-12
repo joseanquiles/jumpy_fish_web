@@ -27,9 +27,11 @@
 
   const SOUND_DIR = "sounds/";
   const HIT_SOUND = "hit.wav";
+  const POINT_SOUND = "point.wav";
   const JUMP_SOUND = "swoosh.wav";
   const BG_SOUND = "underwater.wav";
   const hitSound = new Audio(SOUND_DIR + HIT_SOUND);
+  const pointSound = new Audio(SOUND_DIR + POINT_SOUND);
   const jumpSound = new Audio(SOUND_DIR + JUMP_SOUND);
   const bgSound = new Audio(SOUND_DIR + BG_SOUND);
   bgSound.loop = true;
@@ -40,6 +42,11 @@
     hitSound.play().catch(() => {});
   }
 
+  function playPointSound() {
+    pointSound.currentTime = 0;
+    pointSound.play().catch(() => {});
+  }
+
   function playJumpSound() {
     jumpSound.currentTime = 0;
     jumpSound.play().catch(() => {});
@@ -47,8 +54,8 @@
 
   // Safari only allows playback of a media element once it has been
   // played inside a real user-gesture handler; sounds triggered later
-  // from the rAF loop (e.g. hitSound on collision/score) need this
-  // one-time unlock or they silently fail to play.
+  // from the rAF loop (e.g. hitSound on collision, pointSound on score)
+  // need this one-time unlock or they silently fail to play.
   function unlockSound(audio) {
     const p = audio.play();
     if (p && typeof p.then === "function") {
@@ -63,6 +70,7 @@
     if (audioUnlocked) return;
     audioUnlocked = true;
     unlockSound(hitSound);
+    unlockSound(pointSound);
     unlockSound(jumpSound);
     bgSound.play().catch(() => {});
   }
@@ -93,7 +101,8 @@
 
   const ROCK_W = 100;
   const ROCK_SPEED = 210;        // px/s
-  const ROCK_SPAWN_INTERVAL = 1.7; // seconds
+  const ROCK_SPAWN_MIN = 1.3;    // seconds
+  const ROCK_SPAWN_MAX = 2.1;    // seconds
   const GAP_MIN = 210;
   const GAP_MAX = 270;
   const GAP_MARGIN = 90;         // min distance from top/bottom edges
@@ -121,6 +130,10 @@
     }
   };
 
+  function randomSpawnInterval() {
+    return ROCK_SPAWN_MIN + Math.random() * (ROCK_SPAWN_MAX - ROCK_SPAWN_MIN);
+  }
+
   function resetGame() {
     state.fish.y = LH / 2;
     state.fish.vy = 0;
@@ -128,7 +141,7 @@
     state.fish.frame = 0;
     state.fish.frameTimer = 0;
     state.rocks = [];
-    state.spawnTimer = ROCK_SPAWN_INTERVAL;
+    state.spawnTimer = randomSpawnInterval();
     state.score = 0;
     state.playTime = 0;
   }
@@ -172,14 +185,14 @@
     state.spawnTimer -= dt;
     if (state.spawnTimer <= 0) {
       spawnRockPair();
-      state.spawnTimer = ROCK_SPAWN_INTERVAL;
+      state.spawnTimer = randomSpawnInterval();
     }
     for (const rock of state.rocks) {
       rock.x -= ROCK_SPEED * dt;
       if (!rock.scored && rock.x + ROCK_W < FISH_X) {
         rock.scored = true;
         state.score += 1;
-        playHitSound();
+        playPointSound();
       }
     }
     state.rocks = state.rocks.filter((r) => r.x + ROCK_W > -10);

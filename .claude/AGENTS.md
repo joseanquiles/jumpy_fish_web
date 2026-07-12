@@ -7,8 +7,9 @@ Las imágenes las tengo en el directorio images.
 Los sonidos están en el directorio sounds.
 
 ## Trabajo de agente
-El agente tiene permisos para ejecutar cualquier acción que necesite, no necesita confirmar con el programador.
+El agente tiene permisos para ejecutar cualquier acción que necesite, no necesita confirmar conmingo.
 No hace falta preguntar para leer o escribir ficheros. Tampoco para ejecutar comandos shell.
+No probar los resultados en un navegador; los pruebo yo.
 
 ## Mecánica
 La aplicación es en vertical tamaño teléfono.
