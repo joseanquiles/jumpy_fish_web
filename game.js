@@ -33,7 +33,7 @@
   const jumpSound = new Audio(SOUND_DIR + JUMP_SOUND);
   const bgSound = new Audio(SOUND_DIR + BG_SOUND);
   bgSound.loop = true;
-  let bgSoundStarted = false;
+  let audioUnlocked = false;
 
   function playHitSound() {
     hitSound.currentTime = 0;
@@ -45,9 +45,25 @@
     jumpSound.play().catch(() => {});
   }
 
-  function startBgSound() {
-    if (bgSoundStarted) return;
-    bgSoundStarted = true;
+  // Safari only allows playback of a media element once it has been
+  // played inside a real user-gesture handler; sounds triggered later
+  // from the rAF loop (e.g. hitSound on collision/score) need this
+  // one-time unlock or they silently fail to play.
+  function unlockSound(audio) {
+    const p = audio.play();
+    if (p && typeof p.then === "function") {
+      p.then(() => {
+        audio.pause();
+        audio.currentTime = 0;
+      }).catch(() => {});
+    }
+  }
+
+  function startAudio() {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    unlockSound(hitSound);
+    unlockSound(jumpSound);
     bgSound.play().catch(() => {});
   }
 
@@ -376,7 +392,7 @@
 
   // ----- Input -----
   function handleTap() {
-    startBgSound();
+    startAudio();
     if (state.mode === "splash") {
       resetGame();
       state.mode = "playing";
