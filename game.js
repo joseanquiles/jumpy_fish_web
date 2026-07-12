@@ -1,0 +1,419 @@
+(() => {
+  "use strict";
+
+  // ----- Logical resolution (portrait phone canvas) -----
+  const LW = 540;
+  const LH = 960;
+
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+
+  // ----- Assets -----
+  const IMG_DIR = "images/";
+  const FISH_FRAMES = [
+    "Fish_001.png", "Fish_002.png", "Fish_003.png", "Fish_004.png",
+    "Fish_005.png", "Fish_006.png", "Fish_007.png", "Fish_008.png", "Fish_009.png"
+  ];
+  const BG_NAMES = [
+    "game_background_1.png", "game_background_1_night.png",
+    "game_background_2.png", "game_background_2_night.png",
+    "game_background_3_night.png",
+    "game_background_4.png", "game_background_4_night.png"
+  ];
+  const STONE_BOTTOM = "Stone_1.png"; // rock resting on the sea floor
+  const STONE_TOP = "Stone_2.png";    // rock hanging from the surface
+  const SPLASH_NAME = "splash.png";
+  const GAMEOVER_NAME = "gameover.png";
+
+  const images = {};
+  function loadImage(name) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = IMG_DIR + name;
+      images[name] = img;
+    });
+  }
+
+  const allNames = [
+    ...FISH_FRAMES, ...BG_NAMES, STONE_BOTTOM, STONE_TOP, SPLASH_NAME, GAMEOVER_NAME
+  ];
+
+  // ----- Physics / gameplay constants -----
+  const GRAVITY = 1500;          // px/s^2
+  const JUMP_VELOCITY = -480;    // px/s
+  const MAX_FALL_SPEED = 720;    // px/s
+  const FISH_X = 100;
+  const FISH_W = 84;
+  const FISH_H = FISH_W * (135 / 231);
+  const HITBOX_INSET = 12;
+
+  const ROCK_W = 100;
+  const ROCK_SPEED = 210;        // px/s
+  const ROCK_SPAWN_INTERVAL = 1.7; // seconds
+  const GAP_MIN = 210;
+  const GAP_MAX = 270;
+  const GAP_MARGIN = 90;         // min distance from top/bottom edges
+
+  const BG_SCROLL_SPEED = 45;    // px/s
+  const BG_CHANGE_MIN_MS = 90000;  // 2min - 30s
+  const BG_CHANGE_MAX_MS = 150000; // 2min + 30s
+  const BG_FADE_DURATION = 1.2;  // seconds
+
+  // ----- Game state -----
+  const state = {
+    mode: "loading", // loading | splash | playing | dead
+    fish: { y: LH / 2, vy: 0, angle: 0, frame: 0, frameTimer: 0 },
+    rocks: [],
+    spawnTimer: 0,
+    score: 0,
+    playTime: 0,
+    bg: {
+      order: [],
+      currentIdx: 0,
+      nextIdx: -1,
+      fade: 0,
+      scrollX: 0,
+      changeAt: 0
+    }
+  };
+
+  function resetGame() {
+    state.fish.y = LH / 2;
+    state.fish.vy = 0;
+    state.fish.angle = 0;
+    state.fish.frame = 0;
+    state.fish.frameTimer = 0;
+    state.rocks = [];
+    state.spawnTimer = ROCK_SPAWN_INTERVAL;
+    state.score = 0;
+    state.playTime = 0;
+  }
+
+  function pickNextBgIndex(excludeIdx) {
+    if (BG_NAMES.length <= 1) return 0;
+    let idx;
+    do {
+      idx = Math.floor(Math.random() * BG_NAMES.length);
+    } while (idx === excludeIdx);
+    return idx;
+  }
+
+  function scheduleBgChange(now) {
+    const span = BG_CHANGE_MAX_MS - BG_CHANGE_MIN_MS;
+    state.bg.changeAt = now + BG_CHANGE_MIN_MS + Math.random() * span;
+  }
+
+  function initBg(now) {
+    state.bg.currentIdx = Math.floor(Math.random() * BG_NAMES.length);
+    state.bg.nextIdx = -1;
+    state.bg.fade = 0;
+    state.bg.scrollX = 0;
+    scheduleBgChange(now);
+  }
+
+  // ----- Rocks -----
+  function spawnRockPair() {
+    const gapSize = GAP_MIN + Math.random() * (GAP_MAX - GAP_MIN);
+    const gapTop = GAP_MARGIN + Math.random() * (LH - GAP_MARGIN * 2 - gapSize);
+    const gapBottom = gapTop + gapSize;
+    state.rocks.push({
+      x: LW + ROCK_W,
+      gapTop,
+      gapBottom,
+      scored: false
+    });
+  }
+
+  function updateRocks(dt) {
+    state.spawnTimer -= dt;
+    if (state.spawnTimer <= 0) {
+      spawnRockPair();
+      state.spawnTimer = ROCK_SPAWN_INTERVAL;
+    }
+    for (const rock of state.rocks) {
+      rock.x -= ROCK_SPEED * dt;
+      if (!rock.scored && rock.x + ROCK_W < FISH_X) {
+        rock.scored = true;
+        state.score += 1;
+      }
+    }
+    state.rocks = state.rocks.filter((r) => r.x + ROCK_W > -10);
+  }
+
+  function checkCollisions() {
+    const fx = FISH_X + HITBOX_INSET;
+    const fy = state.fish.y + HITBOX_INSET;
+    const fw = FISH_W - HITBOX_INSET * 2;
+    const fh = FISH_H - HITBOX_INSET * 2;
+
+    if (state.fish.y <= 0 || state.fish.y + FISH_H >= LH) {
+      return true;
+    }
+
+    for (const rock of state.rocks) {
+      if (fx + fw < rock.x || fx > rock.x + ROCK_W) continue;
+      if (fy < rock.gapTop || fy + fh > rock.gapBottom) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // ----- Update -----
+  function updateFish(dt) {
+    state.fish.vy += GRAVITY * dt;
+    if (state.fish.vy > MAX_FALL_SPEED) state.fish.vy = MAX_FALL_SPEED;
+    state.fish.y += state.fish.vy * dt;
+
+    const targetAngle = Math.max(-0.5, Math.min(1.1, state.fish.vy / 500));
+    state.fish.angle += (targetAngle - state.fish.angle) * Math.min(1, dt * 10);
+
+    state.fish.frameTimer += dt;
+    const frameDuration = 0.09;
+    if (state.fish.frameTimer >= frameDuration) {
+      state.fish.frameTimer -= frameDuration;
+      state.fish.frame = (state.fish.frame + 1) % FISH_FRAMES.length;
+    }
+  }
+
+  function updateBg(dt, now) {
+    state.bg.scrollX -= BG_SCROLL_SPEED * dt;
+
+    if (state.bg.nextIdx === -1 && now >= state.bg.changeAt) {
+      state.bg.nextIdx = pickNextBgIndex(state.bg.currentIdx);
+      state.bg.fade = 0;
+    }
+    if (state.bg.nextIdx !== -1) {
+      state.bg.fade += dt / BG_FADE_DURATION;
+      if (state.bg.fade >= 1) {
+        state.bg.currentIdx = state.bg.nextIdx;
+        state.bg.nextIdx = -1;
+        state.bg.fade = 0;
+        scheduleBgChange(now);
+      }
+    }
+  }
+
+  function update(dt, now) {
+    updateBg(dt, now);
+
+    if (state.mode === "playing") {
+      updateFish(dt);
+      updateRocks(dt);
+      state.playTime += dt;
+      if (checkCollisions()) {
+        state.mode = "dead";
+      }
+    } else if (state.mode === "dead") {
+      state.fish.vy += GRAVITY * dt;
+      if (state.fish.vy > MAX_FALL_SPEED) state.fish.vy = MAX_FALL_SPEED;
+      state.fish.y += state.fish.vy * dt;
+      if (state.fish.y + FISH_H > LH) {
+        state.fish.y = LH - FISH_H;
+        state.fish.vy = 0;
+      }
+    }
+  }
+
+  // ----- Drawing -----
+  function drawBgLayer(name, alpha) {
+    const img = images[name];
+    if (!img || !img.complete) return;
+    const scale = LH / img.height;
+    const w = img.width * scale;
+    const h = LH;
+    let x = state.bg.scrollX % w;
+    if (x > 0) x -= w;
+    ctx.globalAlpha = alpha;
+    for (let dx = x; dx < LW; dx += w) {
+      ctx.drawImage(img, dx, 0, w, h);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawBackground() {
+    drawBgLayer(BG_NAMES[state.bg.currentIdx], 1);
+    if (state.bg.nextIdx !== -1) {
+      drawBgLayer(BG_NAMES[state.bg.nextIdx], Math.min(1, state.bg.fade));
+    }
+  }
+
+  function drawRocks() {
+    const bottomImg = images[STONE_BOTTOM];
+    const topImg = images[STONE_TOP];
+    for (const rock of state.rocks) {
+      if (topImg && topImg.complete && rock.gapTop > 0) {
+        ctx.drawImage(topImg, rock.x, 0, ROCK_W, rock.gapTop);
+      }
+      if (bottomImg && bottomImg.complete && rock.gapBottom < LH) {
+        ctx.drawImage(bottomImg, rock.x, rock.gapBottom, ROCK_W, LH - rock.gapBottom);
+      }
+    }
+  }
+
+  function drawFish() {
+    const img = images[FISH_FRAMES[state.fish.frame]];
+    if (!img || !img.complete) return;
+    ctx.save();
+    ctx.translate(FISH_X + FISH_W / 2, state.fish.y + FISH_H / 2);
+    ctx.rotate(state.fish.angle);
+    ctx.drawImage(img, -FISH_W / 2, -FISH_H / 2, FISH_W, FISH_H);
+    ctx.restore();
+  }
+
+  function drawHud() {
+    ctx.textBaseline = "top";
+    ctx.font = "bold 30px sans-serif";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(0,0,0,0.6)";
+    ctx.fillStyle = "#ffffff";
+
+    const scoreText = String(state.score);
+    ctx.textAlign = "right";
+    ctx.strokeText(scoreText, LW - 20, 20);
+    ctx.fillText(scoreText, LW - 20, 20);
+
+    const totalSec = Math.floor(state.playTime);
+    const mm = String(Math.floor(totalSec / 60)).padStart(2, "0");
+    const ss = String(totalSec % 60).padStart(2, "0");
+    const timeText = `${mm}:${ss}`;
+    ctx.font = "bold 24px sans-serif";
+    ctx.textAlign = "left";
+    ctx.strokeText(timeText, 20, 20);
+    ctx.fillText(timeText, 20, 20);
+  }
+
+  function drawCover(img) {
+    if (!img || !img.complete) return;
+    const scale = Math.max(LW / img.width, LH / img.height);
+    const w = img.width * scale;
+    const h = img.height * scale;
+    const x = (LW - w) / 2;
+    const y = (LH - h) / 2;
+    ctx.drawImage(img, x, y, w, h);
+  }
+
+  function drawSplash() {
+    drawBackground();
+    drawCover(images[SPLASH_NAME]);
+  }
+
+  function drawGameOver() {
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(0, 0, LW, LH);
+    const img = images[GAMEOVER_NAME];
+    if (img && img.complete) {
+      const scale = Math.min((LW * 0.8) / img.width, (LH * 0.3) / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      ctx.drawImage(img, (LW - w) / 2, LH * 0.35 - h / 2, w, h);
+    }
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.font = "bold 26px sans-serif";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(0,0,0,0.7)";
+    ctx.fillStyle = "#ffffff";
+    const msg = "Toca para jugar de nuevo";
+    ctx.strokeText(msg, LW / 2, LH * 0.5);
+    ctx.fillText(msg, LW / 2, LH * 0.5);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, LW, LH);
+
+    if (state.mode === "loading") {
+      ctx.fillStyle = "#04121c";
+      ctx.fillRect(0, 0, LW, LH);
+      return;
+    }
+
+    if (state.mode === "splash") {
+      drawSplash();
+      return;
+    }
+
+    drawBackground();
+    drawRocks();
+    drawFish();
+    drawHud();
+
+    if (state.mode === "dead") {
+      drawGameOver();
+    }
+  }
+
+  // ----- Input -----
+  function handleTap() {
+    if (state.mode === "splash") {
+      resetGame();
+      state.mode = "playing";
+    } else if (state.mode === "playing") {
+      state.fish.vy = JUMP_VELOCITY;
+    } else if (state.mode === "dead") {
+      resetGame();
+      state.mode = "playing";
+    }
+  }
+
+  function setupInput() {
+    canvas.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      handleTap();
+    }, { passive: false });
+
+    document.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
+    document.addEventListener("gesturestart", (e) => e.preventDefault());
+  }
+
+  // ----- Canvas sizing (letterboxed, integer pixel scale for crispness) -----
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const availW = window.innerWidth;
+    const availH = window.innerHeight;
+    const scale = Math.min(availW / LW, availH / LH);
+    const cssW = LW * scale;
+    const cssH = LH * scale;
+
+    canvas.style.width = `${cssW}px`;
+    canvas.style.height = `${cssH}px`;
+    canvas.width = Math.round(LW * dpr * scale);
+    canvas.height = Math.round(LH * dpr * scale);
+    ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+  }
+
+  // ----- Main loop -----
+  let lastTime = null;
+  function loop(now) {
+    if (lastTime === null) lastTime = now;
+    let dt = (now - lastTime) / 1000;
+    lastTime = now;
+    dt = Math.min(dt, 1 / 20); // clamp to avoid huge steps on tab switch
+
+    update(dt, now);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ----- Boot -----
+  async function boot() {
+    resize();
+    window.addEventListener("resize", resize);
+    window.addEventListener("orientationchange", resize);
+    setupInput();
+
+    try {
+      await Promise.all(allNames.map(loadImage));
+    } catch (err) {
+      console.error("Error cargando imágenes:", err);
+    }
+
+    initBg(performance.now());
+    state.mode = "splash";
+    requestAnimationFrame(loop);
+  }
+
+  boot();
+})();
