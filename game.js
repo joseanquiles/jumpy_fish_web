@@ -25,6 +25,32 @@
   const SPLASH_NAME = "splash.png";
   const GAMEOVER_NAME = "gameover.png";
 
+  const SOUND_DIR = "sounds/";
+  const HIT_SOUND = "hit.wav";
+  const JUMP_SOUND = "swoosh.wav";
+  const BG_SOUND = "underwater.wav";
+  const hitSound = new Audio(SOUND_DIR + HIT_SOUND);
+  const jumpSound = new Audio(SOUND_DIR + JUMP_SOUND);
+  const bgSound = new Audio(SOUND_DIR + BG_SOUND);
+  bgSound.loop = true;
+  let bgSoundStarted = false;
+
+  function playHitSound() {
+    hitSound.currentTime = 0;
+    hitSound.play().catch(() => {});
+  }
+
+  function playJumpSound() {
+    jumpSound.currentTime = 0;
+    jumpSound.play().catch(() => {});
+  }
+
+  function startBgSound() {
+    if (bgSoundStarted) return;
+    bgSoundStarted = true;
+    bgSound.play().catch(() => {});
+  }
+
   const images = {};
   function loadImage(name) {
     return new Promise((resolve, reject) => {
@@ -137,6 +163,7 @@
       if (!rock.scored && rock.x + ROCK_W < FISH_X) {
         rock.scored = true;
         state.score += 1;
+        playHitSound();
       }
     }
     state.rocks = state.rocks.filter((r) => r.x + ROCK_W > -10);
@@ -149,16 +176,16 @@
     const fh = FISH_H - HITBOX_INSET * 2;
 
     if (state.fish.y <= 0 || state.fish.y + FISH_H >= LH) {
-      return true;
+      return "boundary";
     }
 
     for (const rock of state.rocks) {
       if (fx + fw < rock.x || fx > rock.x + ROCK_W) continue;
       if (fy < rock.gapTop || fy + fh > rock.gapBottom) {
-        return true;
+        return "rock";
       }
     }
-    return false;
+    return null;
   }
 
   // ----- Update -----
@@ -203,7 +230,9 @@
       updateFish(dt);
       updateRocks(dt);
       state.playTime += dt;
-      if (checkCollisions()) {
+      const collision = checkCollisions();
+      if (collision) {
+        if (collision === "rock") playHitSound();
         state.mode = "dead";
       }
     } else if (state.mode === "dead") {
@@ -347,11 +376,13 @@
 
   // ----- Input -----
   function handleTap() {
+    startBgSound();
     if (state.mode === "splash") {
       resetGame();
       state.mode = "playing";
     } else if (state.mode === "playing") {
       state.fish.vy = JUMP_VELOCITY;
+      playJumpSound();
     } else if (state.mode === "dead") {
       resetGame();
       state.mode = "playing";
