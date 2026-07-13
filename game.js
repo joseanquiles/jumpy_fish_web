@@ -25,6 +25,35 @@
   const SPLASH_NAME = "splash.png";
   const GAMEOVER_NAME = "gameover.png";
 
+  const HIGH_SCORES_KEY = "jumpyFishTopScores";
+  const HIGH_SCORES_MAX = 5;
+
+  function loadTopScores() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(HIGH_SCORES_KEY));
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+      return [];
+    }
+  }
+
+  function recordScore(score) {
+    const list = loadTopScores();
+    list.push({ score, date: Date.now() });
+    list.sort((a, b) => b.score - a.score);
+    const top = list.slice(0, HIGH_SCORES_MAX);
+    try {
+      localStorage.setItem(HIGH_SCORES_KEY, JSON.stringify(top));
+    } catch (err) {
+      // storage unavailable (e.g. private browsing) - keep playing without it
+    }
+    return top;
+  }
+
+  function formatDateTime(ts) {
+    return new Date(ts).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+  }
+
   const SOUND_DIR = "sounds/";
   const HIT_SOUND = "hit.wav";
   const POINT_SOUND = "point.wav";
@@ -98,6 +127,7 @@
   const FISH_W = 84;
   const FISH_H = FISH_W * (135 / 231);
   const HITBOX_INSET = 12;
+  const FISH_START_Y = 80; // near the top, so the player has room to react before any rock or the floor
 
   const ROCK_W = 100;
   const ROCK_SPEED = 210;        // px/s
@@ -115,11 +145,12 @@
   // ----- Game state -----
   const state = {
     mode: "loading", // loading | splash | playing | dead
-    fish: { y: LH / 2, vy: 0, angle: 0, frame: 0, frameTimer: 0 },
+    fish: { y: FISH_START_Y, vy: 0, angle: 0, frame: 0, frameTimer: 0 },
     rocks: [],
     spawnTimer: 0,
     score: 0,
     playTime: 0,
+    topScores: [],
     bg: {
       order: [],
       currentIdx: 0,
@@ -135,7 +166,7 @@
   }
 
   function resetGame() {
-    state.fish.y = LH / 2;
+    state.fish.y = FISH_START_Y;
     state.fish.vy = 0;
     state.fish.angle = 0;
     state.fish.frame = 0;
@@ -275,6 +306,7 @@
       if (collision) {
         if (collision === "rock") playHitSound();
         state.mode = "dead";
+        state.topScores = recordScore(state.score);
       }
     } else if (state.mode === "dead") {
       state.fish.vy += GRAVITY * dt;
@@ -375,20 +407,44 @@
     ctx.fillRect(0, 0, LW, LH);
     const img = images[GAMEOVER_NAME];
     if (img && img.complete) {
-      const scale = Math.min((LW * 0.8) / img.width, (LH * 0.3) / img.height);
+      const scale = Math.min((LW * 0.8) / img.width, (LH * 0.22) / img.height);
       const w = img.width * scale;
       const h = img.height * scale;
-      ctx.drawImage(img, (LW - w) / 2, LH * 0.35 - h / 2, w, h);
+      ctx.drawImage(img, (LW - w) / 2, LH * 0.27 - h / 2, w, h);
     }
+
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.font = "bold 26px sans-serif";
-    ctx.lineWidth = 4;
     ctx.strokeStyle = "rgba(0,0,0,0.7)";
     ctx.fillStyle = "#ffffff";
-    const msg = "Toca para jugar de nuevo";
-    ctx.strokeText(msg, LW / 2, LH * 0.5);
-    ctx.fillText(msg, LW / 2, LH * 0.5);
+
+    ctx.font = "bold 22px sans-serif";
+    ctx.lineWidth = 4;
+    const scoreMsg = `Score: ${state.score}`;
+    ctx.strokeText(scoreMsg, LW / 2, LH * 0.42);
+    ctx.fillText(scoreMsg, LW / 2, LH * 0.42);
+
+    ctx.font = "bold 20px sans-serif";
+    const title = "Best Scores";
+    ctx.strokeText(title, LW / 2, LH * 0.48);
+    ctx.fillText(title, LW / 2, LH * 0.48);
+
+    ctx.font = "16px sans-serif";
+    ctx.lineWidth = 3;
+    const rowStart = LH * 0.535;
+    const rowStep = 32;
+    state.topScores.forEach((entry, i) => {
+      const line = `${i + 1}. ${entry.score} — ${formatDateTime(entry.date)}`;
+      const y = rowStart + i * rowStep;
+      ctx.strokeText(line, LW / 2, y);
+      ctx.fillText(line, LW / 2, y);
+    });
+
+    ctx.font = "bold 26px sans-serif";
+    ctx.lineWidth = 4;
+    const msg = "Tap to play again";
+    ctx.strokeText(msg, LW / 2, LH * 0.85);
+    ctx.fillText(msg, LW / 2, LH * 0.85);
   }
 
   function draw() {
@@ -475,6 +531,7 @@
     window.addEventListener("resize", resize);
     window.addEventListener("orientationchange", resize);
     setupInput();
+    state.topScores = loadTopScores();
 
     try {
       await Promise.all(allNames.map(loadImage));
