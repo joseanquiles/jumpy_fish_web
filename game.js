@@ -30,6 +30,11 @@
   const SPLASH_NAME = "splash.png";
   const GAMEOVER_NAME = "gameover.png";
   const RANK_ICONS = ["gold.png", "silver.png", "bronce.png", "diploma_4.png", "diploma_5.png"];
+  const MERMAID_FRAMES = [
+    "enemies/mermaid_3_Move_000.png", "enemies/mermaid_3_Move_001.png", "enemies/mermaid_3_Move_002.png",
+    "enemies/mermaid_3_Move_003.png", "enemies/mermaid_3_Move_004.png", "enemies/mermaid_3_Move_005.png",
+    "enemies/mermaid_3_Move_006.png", "enemies/mermaid_3_Move_007.png", "enemies/mermaid_3_Move_008.png"
+  ];
 
   const HIGH_SCORES_KEY = "jumpyFishTopScores";
   const HIGH_SCORES_MAX = 5;
@@ -124,7 +129,8 @@
   }
 
   const allNames = [
-    ...FISH_FRAMES, ...BG_NAMES, STONE_BOTTOM, STONE_TOP, SPLASH_NAME, GAMEOVER_NAME, ...RANK_ICONS
+    ...FISH_FRAMES, ...BG_NAMES, STONE_BOTTOM, STONE_TOP, SPLASH_NAME, GAMEOVER_NAME, ...RANK_ICONS,
+    ...MERMAID_FRAMES
   ];
 
   // ----- Physics / gameplay constants -----
@@ -145,6 +151,16 @@
   const GAP_MAX = 270;
   const GAP_MARGIN = 90;         // min distance from top/bottom edges
 
+  const MERMAID_W = 160;
+  const MERMAID_H = MERMAID_W * (917 / 1173);
+  const MERMAID_SPEED = 160;          // px/s
+  const MERMAID_SPAWN_MIN = 30;       // seconds
+  const MERMAID_SPAWN_MAX = 120;      // seconds
+  const MERMAID_MARGIN = 60;          // min distance from top/bottom edges for her fixed height
+  const MERMAID_FRAME_DURATION = 0.07; // seconds per animation frame
+  const MERMAID_HITBOX_INSET_X = MERMAID_W * 0.18;
+  const MERMAID_HITBOX_INSET_Y = MERMAID_H * 0.22;
+
   const BG_SCROLL_SPEED = 45;    // px/s
   const BG_CHANGE_MIN_MS = 90000;  // 2min - 30s
   const BG_CHANGE_MAX_MS = 150000; // 2min + 30s
@@ -160,6 +176,8 @@
     playTime: 0,
     topScores: [],
     lastScoreRank: null,
+    mermaid: { active: false, x: 0, y: 0, frame: 0, frameTimer: 0 },
+    mermaidSpawnTimer: 0,
     bg: {
       order: [],
       currentIdx: 0,
@@ -174,6 +192,10 @@
     return ROCK_SPAWN_MIN + Math.random() * (ROCK_SPAWN_MAX - ROCK_SPAWN_MIN);
   }
 
+  function randomMermaidInterval() {
+    return MERMAID_SPAWN_MIN + Math.random() * (MERMAID_SPAWN_MAX - MERMAID_SPAWN_MIN);
+  }
+
   function resetGame() {
     state.fish.y = FISH_START_Y;
     state.fish.vy = 0;
@@ -185,6 +207,10 @@
     state.score = 0;
     state.playTime = 0;
     state.lastScoreRank = null;
+    state.mermaid.active = false;
+    state.mermaid.frame = 0;
+    state.mermaid.frameTimer = 0;
+    state.mermaidSpawnTimer = randomMermaidInterval();
   }
 
   function pickNextBgIndex(excludeIdx) {
@@ -239,6 +265,34 @@
     state.rocks = state.rocks.filter((r) => r.x + ROCK_W > -10);
   }
 
+  // ----- Mermaid (enemy) -----
+  function updateMermaid(dt) {
+    const mermaid = state.mermaid;
+    if (!mermaid.active) {
+      state.mermaidSpawnTimer -= dt;
+      if (state.mermaidSpawnTimer <= 0) {
+        mermaid.active = true;
+        mermaid.x = LW;
+        mermaid.y = MERMAID_MARGIN + Math.random() * (LH - MERMAID_MARGIN * 2 - MERMAID_H);
+        mermaid.frame = 0;
+        mermaid.frameTimer = 0;
+      }
+      return;
+    }
+
+    mermaid.x -= MERMAID_SPEED * dt;
+    mermaid.frameTimer += dt;
+    if (mermaid.frameTimer >= MERMAID_FRAME_DURATION) {
+      mermaid.frameTimer -= MERMAID_FRAME_DURATION;
+      mermaid.frame = (mermaid.frame + 1) % MERMAID_FRAMES.length;
+    }
+
+    if (mermaid.x + MERMAID_W < 0) {
+      mermaid.active = false;
+      state.mermaidSpawnTimer = randomMermaidInterval();
+    }
+  }
+
   // Closest-point test: clamp the ellipse center into the rect, then check
   // whether that closest point falls inside the ellipse.
   function ellipseIntersectsRect(cx, cy, rx, ry, x0, y0, x1, y1) {
@@ -265,6 +319,16 @@
       }
       if (ellipseIntersectsRect(cx, cy, rx, ry, rock.x, rock.gapBottom, rock.x + ROCK_W, LH)) {
         return "rock";
+      }
+    }
+
+    if (state.mermaid.active) {
+      const mx0 = state.mermaid.x + MERMAID_HITBOX_INSET_X;
+      const my0 = state.mermaid.y + MERMAID_HITBOX_INSET_Y;
+      const mx1 = state.mermaid.x + MERMAID_W - MERMAID_HITBOX_INSET_X;
+      const my1 = state.mermaid.y + MERMAID_H - MERMAID_HITBOX_INSET_Y;
+      if (ellipseIntersectsRect(cx, cy, rx, ry, mx0, my0, mx1, my1)) {
+        return "mermaid";
       }
     }
     return null;
@@ -311,10 +375,11 @@
     if (state.mode === "playing") {
       updateFish(dt);
       updateRocks(dt);
+      updateMermaid(dt);
       state.playTime += dt;
       const collision = checkCollisions();
       if (collision) {
-        if (collision === "rock") playHitSound();
+        if (collision === "rock" || collision === "mermaid") playHitSound();
         state.mode = "dead";
         const result = recordScore(state.score);
         state.topScores = result.top;
@@ -365,6 +430,13 @@
         ctx.drawImage(bottomImg, rock.x, rock.gapBottom, ROCK_W, LH - rock.gapBottom);
       }
     }
+  }
+
+  function drawMermaid() {
+    if (!state.mermaid.active) return;
+    const img = images[MERMAID_FRAMES[state.mermaid.frame]];
+    if (!img || !img.complete) return;
+    ctx.drawImage(img, state.mermaid.x, state.mermaid.y, MERMAID_W, MERMAID_H);
   }
 
   function drawFish() {
@@ -517,6 +589,7 @@
 
     drawBackground();
     drawRocks();
+    drawMermaid();
     drawFish();
     drawHud();
 
