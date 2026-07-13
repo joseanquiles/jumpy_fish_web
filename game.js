@@ -40,7 +40,8 @@
 
   function recordScore(score) {
     const list = loadTopScores();
-    list.push({ score, date: Date.now() });
+    const entry = { score, date: Date.now() };
+    list.push(entry);
     list.sort((a, b) => b.score - a.score);
     const top = list.slice(0, HIGH_SCORES_MAX);
     try {
@@ -48,7 +49,8 @@
     } catch (err) {
       // storage unavailable (e.g. private browsing) - keep playing without it
     }
-    return top;
+    const rankIndex = top.indexOf(entry);
+    return { top, rank: rankIndex === -1 ? null : rankIndex + 1 };
   }
 
   function formatDateTime(ts) {
@@ -152,6 +154,7 @@
     score: 0,
     playTime: 0,
     topScores: [],
+    lastScoreRank: null,
     bg: {
       order: [],
       currentIdx: 0,
@@ -176,6 +179,7 @@
     state.spawnTimer = randomSpawnInterval();
     state.score = 0;
     state.playTime = 0;
+    state.lastScoreRank = null;
   }
 
   function pickNextBgIndex(excludeIdx) {
@@ -307,7 +311,9 @@
       if (collision) {
         if (collision === "rock") playHitSound();
         state.mode = "dead";
-        state.topScores = recordScore(state.score);
+        const result = recordScore(state.score);
+        state.topScores = result.top;
+        state.lastScoreRank = result.rank;
       }
     } else if (state.mode === "dead") {
       state.fish.vy += GRAVITY * dt;
@@ -408,10 +414,10 @@
     ctx.fillRect(0, 0, LW, LH);
     const img = images[GAMEOVER_NAME];
     if (img && img.complete) {
-      const scale = Math.min((LW * 0.8) / img.width, (LH * 0.18) / img.height);
+      const scale = Math.min((LW * 0.8) / img.width, (LH * 0.16) / img.height);
       const w = img.width * scale;
       const h = img.height * scale;
-      ctx.drawImage(img, (LW - w) / 2, LH * 0.2 - h / 2, w, h);
+      ctx.drawImage(img, (LW - w) / 2, LH * 0.185 - h / 2, w, h);
     }
 
     ctx.textAlign = "center";
@@ -422,16 +428,27 @@
     ctx.font = "bold 22px sans-serif";
     ctx.lineWidth = 4;
     const scoreMsg = `Score: ${state.score}`;
-    ctx.strokeText(scoreMsg, LW / 2, LH * 0.32);
-    ctx.fillText(scoreMsg, LW / 2, LH * 0.32);
+    ctx.strokeText(scoreMsg, LW / 2, LH * 0.29);
+    ctx.fillText(scoreMsg, LW / 2, LH * 0.29);
+
+    if (state.lastScoreRank) {
+      ctx.font = "bold 18px sans-serif";
+      ctx.fillStyle = "#ffd54a";
+      const badge = state.lastScoreRank === 1
+        ? "New Best Score!"
+        : `New Top ${HIGH_SCORES_MAX} score! (#${state.lastScoreRank})`;
+      ctx.strokeText(badge, LW / 2, LH * 0.335);
+      ctx.fillText(badge, LW / 2, LH * 0.335);
+      ctx.fillStyle = "#ffffff";
+    }
 
     ctx.font = "bold 20px sans-serif";
     const title = "Best Scores";
-    ctx.strokeText(title, LW / 2, LH * 0.37);
-    ctx.fillText(title, LW / 2, LH * 0.37);
+    ctx.strokeText(title, LW / 2, LH * 0.375);
+    ctx.fillText(title, LW / 2, LH * 0.375);
 
-    const rowStart = LH * 0.41;
-    const rowStep = 84;
+    const rowStart = LH * 0.415;
+    const rowStep = 82;
     const iconSize = 76;
     const iconGap = 12;
     const scoreFont = "bold 26px sans-serif";
