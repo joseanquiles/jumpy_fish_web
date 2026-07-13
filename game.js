@@ -8,6 +8,11 @@
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
 
+  const FONT_FAMILY = '"FlappyBird", sans-serif';
+  function gameFont(px) {
+    return `${px}px ${FONT_FAMILY}`;
+  }
+
   // ----- Assets -----
   const IMG_DIR = "images/";
   const FISH_FRAMES = [
@@ -374,7 +379,7 @@
 
   function drawHud() {
     ctx.textBaseline = "top";
-    ctx.font = "bold 30px sans-serif";
+    ctx.font = gameFont(44);
     ctx.lineWidth = 4;
     ctx.strokeStyle = "rgba(0,0,0,0.6)";
     ctx.fillStyle = "#ffffff";
@@ -388,7 +393,7 @@
     const mm = String(Math.floor(totalSec / 60)).padStart(2, "0");
     const ss = String(totalSec % 60).padStart(2, "0");
     const timeText = `${mm}:${ss}`;
-    ctx.font = "bold 24px sans-serif";
+    ctx.font = gameFont(36);
     ctx.textAlign = "left";
     ctx.strokeText(timeText, 20, 20);
     ctx.fillText(timeText, 20, 20);
@@ -425,34 +430,34 @@
     ctx.strokeStyle = "rgba(0,0,0,0.7)";
     ctx.fillStyle = "#ffffff";
 
-    ctx.font = "bold 22px sans-serif";
+    ctx.font = gameFont(32);
     ctx.lineWidth = 4;
     const scoreMsg = `Score: ${state.score}`;
-    ctx.strokeText(scoreMsg, LW / 2, LH * 0.29);
-    ctx.fillText(scoreMsg, LW / 2, LH * 0.29);
+    ctx.strokeText(scoreMsg, LW / 2, LH * 0.28);
+    ctx.fillText(scoreMsg, LW / 2, LH * 0.28);
 
     if (state.lastScoreRank) {
-      ctx.font = "bold 18px sans-serif";
+      ctx.font = gameFont(26);
       ctx.fillStyle = "#ffd54a";
       const badge = state.lastScoreRank === 1
         ? "New Best Score!"
         : `New Top ${HIGH_SCORES_MAX} score! (#${state.lastScoreRank})`;
-      ctx.strokeText(badge, LW / 2, LH * 0.335);
-      ctx.fillText(badge, LW / 2, LH * 0.335);
+      ctx.strokeText(badge, LW / 2, LH * 0.33);
+      ctx.fillText(badge, LW / 2, LH * 0.33);
       ctx.fillStyle = "#ffffff";
     }
 
-    ctx.font = "bold 20px sans-serif";
+    ctx.font = gameFont(30);
     const title = "Best Scores";
     ctx.strokeText(title, LW / 2, LH * 0.375);
     ctx.fillText(title, LW / 2, LH * 0.375);
 
-    const rowStart = LH * 0.415;
-    const rowStep = 82;
+    const rowStart = LH * 0.43;
+    const rowStep = 86;
     const iconSize = 76;
     const iconGap = 12;
-    const scoreFont = "bold 26px sans-serif";
-    const dateFont = "13px sans-serif";
+    const scoreFont = gameFont(38);
+    const dateFont = gameFont(26);
     const sep = "   —   ";
     state.topScores.forEach((entry, i) => {
       const scoreText = `${entry.score}`;
@@ -469,7 +474,7 @@
 
       const icon = images[RANK_ICONS[i]];
       if (icon && icon.complete) {
-        ctx.drawImage(icon, startX, y - (iconSize - 26) / 2, iconSize, iconSize);
+        ctx.drawImage(icon, startX, y - (iconSize - 38) / 2, iconSize, iconSize);
       }
 
       let textX = startX + iconSize + iconGap;
@@ -483,17 +488,17 @@
 
       ctx.font = dateFont;
       ctx.lineWidth = 3;
-      const dateY = y + 7; // nudge down so it optically centers against the taller score digits
+      const dateY = y + 6; // nudge down so it optically centers against the taller score digits
       ctx.strokeText(sep + dateText, textX, dateY);
       ctx.fillText(sep + dateText, textX, dateY);
     });
     ctx.textAlign = "center";
 
-    ctx.font = "bold 26px sans-serif";
+    ctx.font = gameFont(38);
     ctx.lineWidth = 4;
     const msg = "Tap to play again";
-    ctx.strokeText(msg, LW / 2, LH * 0.87);
-    ctx.fillText(msg, LW / 2, LH * 0.87);
+    ctx.strokeText(msg, LW / 2, LH * 0.88);
+    ctx.fillText(msg, LW / 2, LH * 0.88);
   }
 
   function draw() {
@@ -586,6 +591,12 @@
       await Promise.all(allNames.map(loadImage));
     } catch (err) {
       console.error("Error cargando imágenes:", err);
+    }
+
+    try {
+      await document.fonts.load(gameFont(16));
+    } catch (err) {
+      console.error("Error cargando la fuente:", err);
     }
 
     initBg(performance.now());

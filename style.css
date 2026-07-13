@@ -1,3 +1,8 @@
+@font-face {
+  font-family: "FlappyBird";
+  src: url("fonts/Flappy-Bird.ttf") format("truetype");
+}
+
 html, body {
   margin: 0;
   padding: 0;
