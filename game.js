@@ -24,6 +24,7 @@
   const STONE_TOP = "Stone_2.png";    // rock hanging from the surface
   const SPLASH_NAME = "splash.png";
   const GAMEOVER_NAME = "gameover.png";
+  const RANK_ICONS = ["gold.png", "silver.png", "bronce.png", "diploma_4.png", "diploma_5.png"];
 
   const HIGH_SCORES_KEY = "jumpyFishTopScores";
   const HIGH_SCORES_MAX = 5;
@@ -116,7 +117,7 @@
   }
 
   const allNames = [
-    ...FISH_FRAMES, ...BG_NAMES, STONE_BOTTOM, STONE_TOP, SPLASH_NAME, GAMEOVER_NAME
+    ...FISH_FRAMES, ...BG_NAMES, STONE_BOTTOM, STONE_TOP, SPLASH_NAME, GAMEOVER_NAME, ...RANK_ICONS
   ];
 
   // ----- Physics / gameplay constants -----
@@ -407,10 +408,10 @@
     ctx.fillRect(0, 0, LW, LH);
     const img = images[GAMEOVER_NAME];
     if (img && img.complete) {
-      const scale = Math.min((LW * 0.8) / img.width, (LH * 0.22) / img.height);
+      const scale = Math.min((LW * 0.8) / img.width, (LH * 0.18) / img.height);
       const w = img.width * scale;
       const h = img.height * scale;
-      ctx.drawImage(img, (LW - w) / 2, LH * 0.27 - h / 2, w, h);
+      ctx.drawImage(img, (LW - w) / 2, LH * 0.2 - h / 2, w, h);
     }
 
     ctx.textAlign = "center";
@@ -421,30 +422,61 @@
     ctx.font = "bold 22px sans-serif";
     ctx.lineWidth = 4;
     const scoreMsg = `Score: ${state.score}`;
-    ctx.strokeText(scoreMsg, LW / 2, LH * 0.42);
-    ctx.fillText(scoreMsg, LW / 2, LH * 0.42);
+    ctx.strokeText(scoreMsg, LW / 2, LH * 0.32);
+    ctx.fillText(scoreMsg, LW / 2, LH * 0.32);
 
     ctx.font = "bold 20px sans-serif";
     const title = "Best Scores";
-    ctx.strokeText(title, LW / 2, LH * 0.48);
-    ctx.fillText(title, LW / 2, LH * 0.48);
+    ctx.strokeText(title, LW / 2, LH * 0.37);
+    ctx.fillText(title, LW / 2, LH * 0.37);
 
-    ctx.font = "16px sans-serif";
-    ctx.lineWidth = 3;
-    const rowStart = LH * 0.535;
-    const rowStep = 32;
+    const rowStart = LH * 0.41;
+    const rowStep = 84;
+    const iconSize = 76;
+    const iconGap = 12;
+    const scoreFont = "bold 26px sans-serif";
+    const dateFont = "13px sans-serif";
+    const sep = "   —   ";
     state.topScores.forEach((entry, i) => {
-      const line = `${i + 1}. ${entry.score} — ${formatDateTime(entry.date)}`;
+      const scoreText = `${entry.score}`;
+      const dateText = formatDateTime(entry.date);
+
+      ctx.font = scoreFont;
+      const scoreWidth = ctx.measureText(scoreText).width;
+      ctx.font = dateFont;
+      const dateWidth = ctx.measureText(sep + dateText).width;
+
+      const totalWidth = iconSize + iconGap + scoreWidth + dateWidth;
+      const startX = LW / 2 - totalWidth / 2;
       const y = rowStart + i * rowStep;
-      ctx.strokeText(line, LW / 2, y);
-      ctx.fillText(line, LW / 2, y);
+
+      const icon = images[RANK_ICONS[i]];
+      if (icon && icon.complete) {
+        ctx.drawImage(icon, startX, y - (iconSize - 26) / 2, iconSize, iconSize);
+      }
+
+      let textX = startX + iconSize + iconGap;
+      ctx.textAlign = "left";
+
+      ctx.font = scoreFont;
+      ctx.lineWidth = 4;
+      ctx.strokeText(scoreText, textX, y);
+      ctx.fillText(scoreText, textX, y);
+      textX += scoreWidth;
+
+      ctx.font = dateFont;
+      ctx.lineWidth = 3;
+      const dateY = y + 7; // nudge down so it optically centers against the taller score digits
+      ctx.strokeText(sep + dateText, textX, dateY);
+      ctx.fillText(sep + dateText, textX, dateY);
     });
+    ctx.textAlign = "center";
 
     ctx.font = "bold 26px sans-serif";
     ctx.lineWidth = 4;
     const msg = "Tap to play again";
-    ctx.strokeText(msg, LW / 2, LH * 0.85);
-    ctx.fillText(msg, LW / 2, LH * 0.85);
+    ctx.strokeText(msg, LW / 2, LH * 0.87);
+    ctx.fillText(msg, LW / 2, LH * 0.87);
   }
 
   function draw() {
