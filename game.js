@@ -38,6 +38,18 @@
 
   const HIGH_SCORES_KEY = "jumpyFishTopScores";
   const HIGH_SCORES_MAX = 5;
+  const NAME_MAX_LEN = 12;
+
+  function promptPlayerName() {
+    let input = null;
+    try {
+      input = window.prompt("New record! Enter your name:", "");
+    } catch (err) {
+      input = null;
+    }
+    const trimmed = (input || "").trim().slice(0, NAME_MAX_LEN);
+    return trimmed || "Player";
+  }
 
   function loadTopScores() {
     try {
@@ -48,9 +60,16 @@
     }
   }
 
-  function recordScore(score) {
+  function wouldMakeTopScores(score) {
     const list = loadTopScores();
-    const entry = { score, date: Date.now() };
+    if (list.length < HIGH_SCORES_MAX) return true;
+    const lowest = list.reduce((min, e) => Math.min(min, e.score), Infinity);
+    return score > lowest;
+  }
+
+  function recordScore(score, name) {
+    const list = loadTopScores();
+    const entry = { score, name: name || "", date: Date.now() };
     list.push(entry);
     list.sort((a, b) => b.score - a.score);
     const top = list.slice(0, HIGH_SCORES_MAX);
@@ -137,6 +156,7 @@
   const GRAVITY = 1500;          // px/s^2
   const JUMP_VELOCITY = -480;    // px/s
   const MAX_FALL_SPEED = 720;    // px/s
+  const DEAD_TAP_DELAY_MS = 4000; // taps are ignored for this long after dying
   const FISH_X = 100;
   const FISH_W = 84;
   const FISH_H = FISH_W * (135 / 231);
@@ -153,10 +173,12 @@
 
   const MERMAID_W = 160;
   const MERMAID_H = MERMAID_W * (917 / 1173);
-  const MERMAID_SPEED = 160;          // px/s
-  const MERMAID_SPAWN_MIN = 20;       // seconds
-  const MERMAID_SPAWN_MAX = 40;       // seconds
+  const MERMAID_SPEED_MIN = 180;      // px/s - well above BG_SCROLL_SPEED so she never looks stuck
+  const MERMAID_SPEED_MAX = 320;      // px/s
+  const MERMAID_SPAWN_MIN = 10;       // seconds
+  const MERMAID_SPAWN_MAX = 20;       // seconds
   const MERMAID_MARGIN = 60;          // min distance from top/bottom edges for her fixed height
+  const MERMAID_CENTER_GAP = 0.2;     // fraction of screen height kept clear around the middle
   const MERMAID_FRAME_DURATION = 0.07; // seconds per animation frame
   const MERMAID_HITBOX_INSET_X = MERMAID_W * 0.18;
   const MERMAID_HITBOX_INSET_Y = MERMAID_H * 0.22;
@@ -176,7 +198,8 @@
     playTime: 0,
     topScores: [],
     lastScoreRank: null,
-    mermaid: { active: false, x: 0, y: 0, frame: 0, frameTimer: 0 },
+    deadAt: 0,
+    mermaid: { active: false, x: 0, y: 0, speed: 0, frame: 0, frameTimer: 0 },
     mermaidSpawnTimer: 0,
     bg: {
       order: [],
@@ -194,6 +217,17 @@
 
   function randomMermaidInterval() {
     return MERMAID_SPAWN_MIN + Math.random() * (MERMAID_SPAWN_MAX - MERMAID_SPAWN_MIN);
+  }
+
+  // Picks a height in the top band or the bottom band, never near the middle.
+  function randomMermaidY() {
+    const topMin = MERMAID_MARGIN;
+    const topMax = LH * (0.5 - MERMAID_CENTER_GAP / 2) - MERMAID_H;
+    const bottomMin = LH * (0.5 + MERMAID_CENTER_GAP / 2);
+    const bottomMax = LH - MERMAID_MARGIN - MERMAID_H;
+    return Math.random() < 0.5
+      ? topMin + Math.random() * (topMax - topMin)
+      : bottomMin + Math.random() * (bottomMax - bottomMin);
   }
 
   function resetGame() {
@@ -273,14 +307,15 @@
       if (state.mermaidSpawnTimer <= 0) {
         mermaid.active = true;
         mermaid.x = LW;
-        mermaid.y = MERMAID_MARGIN + Math.random() * (LH - MERMAID_MARGIN * 2 - MERMAID_H);
+        mermaid.y = randomMermaidY();
+        mermaid.speed = MERMAID_SPEED_MIN + Math.random() * (MERMAID_SPEED_MAX - MERMAID_SPEED_MIN);
         mermaid.frame = 0;
         mermaid.frameTimer = 0;
       }
       return;
     }
 
-    mermaid.x -= MERMAID_SPEED * dt;
+    mermaid.x -= mermaid.speed * dt;
     mermaid.frameTimer += dt;
     if (mermaid.frameTimer >= MERMAID_FRAME_DURATION) {
       mermaid.frameTimer -= MERMAID_FRAME_DURATION;
@@ -381,7 +416,9 @@
       if (collision) {
         if (collision === "rock" || collision === "mermaid") playHitSound();
         state.mode = "dead";
-        const result = recordScore(state.score);
+        state.deadAt = now;
+        const name = wouldMakeTopScores(state.score) ? promptPlayerName() : "";
+        const result = recordScore(state.score, name);
         state.topScores = result.top;
         state.lastScoreRank = result.rank;
       }
@@ -486,7 +523,7 @@
     drawCover(images[SPLASH_NAME]);
   }
 
-  function drawGameOver() {
+  function drawGameOver(now) {
     ctx.fillStyle = "rgba(0,0,0,0.35)";
     ctx.fillRect(0, 0, LW, LH);
     const img = images[GAMEOVER_NAME];
@@ -525,55 +562,75 @@
     ctx.fillText(title, LW / 2, LH * 0.375);
 
     const rowStart = LH * 0.43;
-    const rowStep = 86;
-    const iconSize = 76;
+    const rowStep = 84;
+    const iconSize = 70;
     const iconGap = 12;
-    const scoreFont = gameFont(38);
-    const dateFont = gameFont(26);
-    const sep = "   —   ";
+    const scoreFont = gameFont(32);
+    const nameFont = gameFont(24);
+    const dateFont = gameFont(16);
     state.topScores.forEach((entry, i) => {
       const scoreText = `${entry.score}`;
+      const nameText = entry.name || "";
       const dateText = formatDateTime(entry.date);
 
       ctx.font = scoreFont;
       const scoreWidth = ctx.measureText(scoreText).width;
+      ctx.font = nameFont;
+      const nameWidth = nameText ? ctx.measureText("  " + nameText).width : 0;
       ctx.font = dateFont;
-      const dateWidth = ctx.measureText(sep + dateText).width;
+      const dateWidth = ctx.measureText(dateText).width;
 
-      const totalWidth = iconSize + iconGap + scoreWidth + dateWidth;
+      const line1Width = scoreWidth + nameWidth;
+      const totalWidth = iconSize + iconGap + Math.max(line1Width, dateWidth);
       const startX = LW / 2 - totalWidth / 2;
       const y = rowStart + i * rowStep;
 
       const icon = images[RANK_ICONS[i]];
       if (icon && icon.complete) {
-        ctx.drawImage(icon, startX, y - (iconSize - 38) / 2, iconSize, iconSize);
+        ctx.drawImage(icon, startX, y - 7, iconSize, iconSize);
       }
 
-      let textX = startX + iconSize + iconGap;
+      const textX = startX + iconSize + iconGap;
       ctx.textAlign = "left";
 
       ctx.font = scoreFont;
       ctx.lineWidth = 4;
       ctx.strokeText(scoreText, textX, y);
       ctx.fillText(scoreText, textX, y);
-      textX += scoreWidth;
+
+      if (nameText) {
+        ctx.font = nameFont;
+        ctx.lineWidth = 3;
+        const nameY = y + 4; // nudge down so it optically centers against the taller score digits
+        ctx.strokeText("  " + nameText, textX + scoreWidth, nameY);
+        ctx.fillText("  " + nameText, textX + scoreWidth, nameY);
+      }
 
       ctx.font = dateFont;
-      ctx.lineWidth = 3;
-      const dateY = y + 6; // nudge down so it optically centers against the taller score digits
-      ctx.strokeText(sep + dateText, textX, dateY);
-      ctx.fillText(sep + dateText, textX, dateY);
+      ctx.lineWidth = 2;
+      const dateY = y + 38;
+      ctx.strokeText(dateText, textX, dateY);
+      ctx.fillText(dateText, textX, dateY);
     });
     ctx.textAlign = "center";
 
+    const remainingMs = DEAD_TAP_DELAY_MS - (now - state.deadAt);
     ctx.font = gameFont(38);
     ctx.lineWidth = 4;
-    const msg = "Tap to play again";
-    ctx.strokeText(msg, LW / 2, LH * 0.88);
-    ctx.fillText(msg, LW / 2, LH * 0.88);
+    if (remainingMs > 0) {
+      ctx.fillStyle = "#aaaaaa";
+      const waitMsg = `Wait ${Math.ceil(remainingMs / 1000)}...`;
+      ctx.strokeText(waitMsg, LW / 2, LH * 0.88);
+      ctx.fillText(waitMsg, LW / 2, LH * 0.88);
+      ctx.fillStyle = "#ffffff";
+    } else {
+      const msg = "Tap to play again";
+      ctx.strokeText(msg, LW / 2, LH * 0.88);
+      ctx.fillText(msg, LW / 2, LH * 0.88);
+    }
   }
 
-  function draw() {
+  function draw(now) {
     ctx.clearRect(0, 0, LW, LH);
 
     if (state.mode === "loading") {
@@ -594,7 +651,7 @@
     drawHud();
 
     if (state.mode === "dead") {
-      drawGameOver();
+      drawGameOver(now);
     }
   }
 
@@ -608,6 +665,7 @@
       state.fish.vy = JUMP_VELOCITY;
       playJumpSound();
     } else if (state.mode === "dead") {
+      if (performance.now() - state.deadAt < DEAD_TAP_DELAY_MS) return;
       resetGame();
       state.mode = "playing";
     }
@@ -648,7 +706,7 @@
     dt = Math.min(dt, 1 / 20); // clamp to avoid huge steps on tab switch
 
     update(dt, now);
-    draw();
+    draw(now);
     requestAnimationFrame(loop);
   }
 
