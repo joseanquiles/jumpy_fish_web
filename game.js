@@ -182,7 +182,7 @@
   const FISH_X = 100;
   const FISH_W = 84;
   const FISH_H = FISH_W * (135 / 231);
-  const HITBOX_INSET = 12;
+  const HITBOX_INSET = 17;
   const FISH_START_Y = 80; // near the top, so the player has room to react before any rock or the floor
 
   const ROCK_W = 100;
@@ -355,31 +355,25 @@
     }
   }
 
-  // Closest-point test: clamp the ellipse center into the rect, then check
-  // whether that closest point falls inside the ellipse.
-  function ellipseIntersectsRect(cx, cy, rx, ry, x0, y0, x1, y1) {
-    const closestX = Math.max(x0, Math.min(cx, x1));
-    const closestY = Math.max(y0, Math.min(cy, y1));
-    const dx = (closestX - cx) / rx;
-    const dy = (closestY - cy) / ry;
-    return dx * dx + dy * dy <= 1;
+  function rectsOverlap(ax0, ay0, ax1, ay1, bx0, by0, bx1, by1) {
+    return ax0 < bx1 && ax1 > bx0 && ay0 < by1 && ay1 > by0;
   }
 
   function checkCollisions() {
-    const cx = FISH_X + FISH_W / 2;
-    const cy = state.fish.y + FISH_H / 2;
-    const rx = (FISH_W - HITBOX_INSET * 2) / 2;
-    const ry = (FISH_H - HITBOX_INSET * 2) / 2;
+    const fx0 = FISH_X + HITBOX_INSET;
+    const fy0 = state.fish.y + HITBOX_INSET;
+    const fx1 = FISH_X + FISH_W - HITBOX_INSET;
+    const fy1 = state.fish.y + FISH_H - HITBOX_INSET;
 
-    if (cy - ry <= 0 || cy + ry >= LH) {
+    if (fy0 <= 0 || fy1 >= LH) {
       return "boundary";
     }
 
     for (const rock of state.rocks) {
-      if (ellipseIntersectsRect(cx, cy, rx, ry, rock.x, 0, rock.x + ROCK_W, rock.gapTop)) {
+      if (rectsOverlap(fx0, fy0, fx1, fy1, rock.x, 0, rock.x + ROCK_W, rock.gapTop)) {
         return "rock";
       }
-      if (ellipseIntersectsRect(cx, cy, rx, ry, rock.x, rock.gapBottom, rock.x + ROCK_W, LH)) {
+      if (rectsOverlap(fx0, fy0, fx1, fy1, rock.x, rock.gapBottom, rock.x + ROCK_W, LH)) {
         return "rock";
       }
     }
@@ -389,7 +383,7 @@
       const my0 = state.mermaid.y + MERMAID_HITBOX_INSET_Y;
       const mx1 = state.mermaid.x + MERMAID_W - MERMAID_HITBOX_INSET_X;
       const my1 = state.mermaid.y + MERMAID_H - MERMAID_HITBOX_INSET_Y;
-      if (ellipseIntersectsRect(cx, cy, rx, ry, mx0, my0, mx1, my1)) {
+      if (rectsOverlap(fx0, fy0, fx1, fy1, mx0, my0, mx1, my1)) {
         return "mermaid";
       }
     }
