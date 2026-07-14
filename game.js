@@ -30,10 +30,18 @@
   const SPLASH_NAME = "splash.png";
   const GAMEOVER_NAME = "gameover.png";
   const RANK_ICONS = ["gold.png", "silver.png", "bronce.png", "diploma_4.png", "diploma_5.png"];
-  const MERMAID_FRAMES = [
-    "enemies/mermaid_3_Move_000.png", "enemies/mermaid_3_Move_001.png", "enemies/mermaid_3_Move_002.png",
-    "enemies/mermaid_3_Move_003.png", "enemies/mermaid_3_Move_004.png", "enemies/mermaid_3_Move_005.png",
-    "enemies/mermaid_3_Move_006.png", "enemies/mermaid_3_Move_007.png", "enemies/mermaid_3_Move_008.png"
+  function mermaidFrameList(variant, start, count) {
+    const frames = [];
+    for (let i = 0; i < count; i++) {
+      const n = String(start + i).padStart(3, "0");
+      frames.push(`enemies/mermaid_${variant}_Move_${n}.png`);
+    }
+    return frames;
+  }
+  const MERMAID_VARIANTS = [
+    mermaidFrameList(1, 1, 9),
+    mermaidFrameList(2, 1, 9),
+    mermaidFrameList(3, 0, 9)
   ];
 
   const HIGH_SCORES_KEY = "jumpyFishTopScores";
@@ -91,11 +99,14 @@
   const POINT_SOUND = "point.wav";
   const JUMP_SOUND = "swoosh.wav";
   const BG_SOUND = "underwater.wav";
+  const MERMAID_SOUND = "mermaid.wav";
   const hitSound = new Audio(SOUND_DIR + HIT_SOUND);
   const pointSound = new Audio(SOUND_DIR + POINT_SOUND);
   const jumpSound = new Audio(SOUND_DIR + JUMP_SOUND);
   const bgSound = new Audio(SOUND_DIR + BG_SOUND);
+  const mermaidSound = new Audio(SOUND_DIR + MERMAID_SOUND);
   bgSound.loop = true;
+  mermaidSound.loop = true;
   let audioUnlocked = false;
 
   function playHitSound() {
@@ -111,6 +122,16 @@
   function playJumpSound() {
     jumpSound.currentTime = 0;
     jumpSound.play().catch(() => {});
+  }
+
+  function playMermaidSound() {
+    mermaidSound.currentTime = 0;
+    mermaidSound.play().catch(() => {});
+  }
+
+  function stopMermaidSound() {
+    mermaidSound.pause();
+    mermaidSound.currentTime = 0;
   }
 
   // Safari only allows playback of a media element once it has been
@@ -133,6 +154,7 @@
     unlockSound(hitSound);
     unlockSound(pointSound);
     unlockSound(jumpSound);
+    unlockSound(mermaidSound);
     bgSound.play().catch(() => {});
   }
 
@@ -149,7 +171,7 @@
 
   const allNames = [
     ...FISH_FRAMES, ...BG_NAMES, STONE_BOTTOM, STONE_TOP, SPLASH_NAME, GAMEOVER_NAME, ...RANK_ICONS,
-    ...MERMAID_FRAMES
+    ...MERMAID_VARIANTS.flat()
   ];
 
   // ----- Physics / gameplay constants -----
@@ -176,7 +198,7 @@
   const MERMAID_SPEED_MIN = 180;      // px/s - well above BG_SCROLL_SPEED so she never looks stuck
   const MERMAID_SPEED_MAX = 320;      // px/s
   const MERMAID_SPAWN_MIN = 10;       // seconds
-  const MERMAID_SPAWN_MAX = 20;       // seconds
+  const MERMAID_SPAWN_MAX = 30;       // seconds
   const MERMAID_MARGIN = 60;          // min distance from top/bottom edges for her fixed height
   const MERMAID_CENTER_GAP = 0.2;     // fraction of screen height kept clear around the middle
   const MERMAID_FRAME_DURATION = 0.07; // seconds per animation frame
@@ -199,7 +221,7 @@
     topScores: [],
     lastScoreRank: null,
     deadAt: 0,
-    mermaid: { active: false, x: 0, y: 0, speed: 0, frame: 0, frameTimer: 0 },
+    mermaid: { active: false, x: 0, y: 0, speed: 0, variant: 0, frame: 0, frameTimer: 0 },
     mermaidSpawnTimer: 0,
     bg: {
       order: [],
@@ -245,6 +267,7 @@
     state.mermaid.frame = 0;
     state.mermaid.frameTimer = 0;
     state.mermaidSpawnTimer = randomMermaidInterval();
+    stopMermaidSound();
   }
 
   function pickNextBgIndex(excludeIdx) {
@@ -309,22 +332,26 @@
         mermaid.x = LW;
         mermaid.y = randomMermaidY();
         mermaid.speed = MERMAID_SPEED_MIN + Math.random() * (MERMAID_SPEED_MAX - MERMAID_SPEED_MIN);
+        mermaid.variant = Math.floor(Math.random() * MERMAID_VARIANTS.length);
         mermaid.frame = 0;
         mermaid.frameTimer = 0;
+        playMermaidSound();
       }
       return;
     }
 
     mermaid.x -= mermaid.speed * dt;
     mermaid.frameTimer += dt;
+    const frames = MERMAID_VARIANTS[mermaid.variant];
     if (mermaid.frameTimer >= MERMAID_FRAME_DURATION) {
       mermaid.frameTimer -= MERMAID_FRAME_DURATION;
-      mermaid.frame = (mermaid.frame + 1) % MERMAID_FRAMES.length;
+      mermaid.frame = (mermaid.frame + 1) % frames.length;
     }
 
     if (mermaid.x + MERMAID_W < 0) {
       mermaid.active = false;
       state.mermaidSpawnTimer = randomMermaidInterval();
+      stopMermaidSound();
     }
   }
 
@@ -415,6 +442,7 @@
       const collision = checkCollisions();
       if (collision) {
         if (collision === "rock" || collision === "mermaid") playHitSound();
+        if (state.mermaid.active) stopMermaidSound();
         state.mode = "dead";
         state.deadAt = now;
         const name = wouldMakeTopScores(state.score) ? promptPlayerName() : "";
@@ -471,7 +499,8 @@
 
   function drawMermaid() {
     if (!state.mermaid.active) return;
-    const img = images[MERMAID_FRAMES[state.mermaid.frame]];
+    const frames = MERMAID_VARIANTS[state.mermaid.variant];
+    const img = images[frames[state.mermaid.frame]];
     if (!img || !img.complete) return;
     ctx.drawImage(img, state.mermaid.x, state.mermaid.y, MERMAID_W, MERMAID_H);
   }
