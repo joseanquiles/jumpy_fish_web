@@ -218,8 +218,8 @@
   const BUBBLE_ASPECT = 1254 / 1280;
   const BUBBLE_W = 150;                // size while floating free, before being caught
   const BUBBLE_H = BUBBLE_W * BUBBLE_ASPECT;
-  const BUBBLE_SPEED_MIN = 50;         // px/s - slow drift
-  const BUBBLE_SPEED_MAX = 90;         // px/s
+  const BUBBLE_SPEED_MIN = 110;        // px/s - clearly above BG_SCROLL_SPEED so it never looks stuck
+  const BUBBLE_SPEED_MAX = 150;        // px/s
   const BUBBLE_SPAWN_MIN = 20;         // seconds
   const BUBBLE_SPAWN_MAX = 40;         // seconds
   const BUBBLE_Y_JITTER = 180;         // px of random offset around vertical center
@@ -249,7 +249,7 @@
     mermaidSpawnTimer: 0,
     bubble: { active: false, x: 0, y: 0, speed: 0 },
     bubbleSpawnTimer: 0,
-    shield: { active: false, timer: 0 },
+    shield: { active: false, timer: 0, duration: 0 },
     bg: {
       order: [],
       currentIdx: 0,
@@ -313,6 +313,7 @@
     state.bubbleSpawnTimer = randomBubbleInterval();
     state.shield.active = false;
     state.shield.timer = 0;
+    state.shield.duration = 0;
   }
 
   function pickNextBgIndex(excludeIdx) {
@@ -454,6 +455,7 @@
       state.bubbleSpawnTimer = randomBubbleInterval();
       state.shield.active = true;
       state.shield.timer = randomShieldDuration();
+      state.shield.duration = state.shield.timer;
       playBubblePopSound();
       return;
     }
@@ -670,6 +672,23 @@
     ctx.fillText(timeText, 20, 20);
   }
 
+  function drawShieldBar() {
+    if (!state.shield.active || state.shield.duration <= 0) return;
+    const frac = Math.max(0, Math.min(1, state.shield.timer / state.shield.duration));
+    const barW = 260;
+    const barH = 14;
+    const x = (LW - barW) / 2;
+    const y = 70;
+
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    ctx.fillRect(x - 3, y - 3, barW + 6, barH + 6);
+    ctx.fillStyle = "#7fd8ff";
+    ctx.fillRect(x, y, barW * frac, barH);
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, barW, barH);
+  }
+
   function drawCover(img) {
     if (!img || !img.complete) return;
     const scale = Math.max(LW / img.width, LH / img.height);
@@ -813,6 +832,7 @@
     drawShieldBubble();
     drawFish();
     drawHud();
+    drawShieldBar();
 
     if (state.mode === "dead") {
       drawGameOver(now);
@@ -873,6 +893,8 @@
     draw(now);
     requestAnimationFrame(loop);
   }
+
+  window.__debugState = state;
 
   // ----- Boot -----
   async function boot() {
