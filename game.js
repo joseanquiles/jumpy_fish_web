@@ -205,8 +205,8 @@
 
   const MERMAID_W = 160;
   const MERMAID_H = MERMAID_W * (917 / 1173);
-  const MERMAID_SPEED_MIN = 180;      // px/s - well above BG_SCROLL_SPEED so she never looks stuck
-  const MERMAID_SPEED_MAX = 320;      // px/s
+  const MERMAID_SPEED_MIN = 250;      // px/s - always faster than ROCK_SPEED, so she can't linger inside a rock gap and block it
+  const MERMAID_SPEED_MAX = 400;      // px/s
   const MERMAID_SPAWN_MIN = 10;       // seconds
   const MERMAID_SPAWN_MAX = 30;       // seconds
   const MERMAID_MARGIN = 150;         // min distance from top/bottom edges for her fixed height
