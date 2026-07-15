@@ -27,6 +27,7 @@
   ];
   const STONE_BOTTOM = "Stone_1.png"; // rock resting on the sea floor
   const STONE_TOP = "Stone_2.png";    // rock hanging from the surface
+  const BUBBLE_NAME = "burbuja.png";
   const SPLASH_NAME = "splash.png";
   const GAMEOVER_NAME = "gameover.png";
   const RANK_ICONS = ["gold.png", "silver.png", "bronce.png", "diploma_4.png", "diploma_5.png"];
@@ -100,11 +101,13 @@
   const JUMP_SOUND = "swoosh.wav";
   const BG_SOUND = "underwater.wav";
   const MERMAID_SOUND = "mermaid.wav";
+  const BUBBLE_POP_SOUND = "bubble-pop.wav";
   const hitSound = new Audio(SOUND_DIR + HIT_SOUND);
   const pointSound = new Audio(SOUND_DIR + POINT_SOUND);
   const jumpSound = new Audio(SOUND_DIR + JUMP_SOUND);
   const bgSound = new Audio(SOUND_DIR + BG_SOUND);
   const mermaidSound = new Audio(SOUND_DIR + MERMAID_SOUND);
+  const bubblePopSound = new Audio(SOUND_DIR + BUBBLE_POP_SOUND);
   bgSound.loop = true;
   mermaidSound.loop = true;
   let audioUnlocked = false;
@@ -134,6 +137,11 @@
     mermaidSound.currentTime = 0;
   }
 
+  function playBubblePopSound() {
+    bubblePopSound.currentTime = 0;
+    bubblePopSound.play().catch(() => {});
+  }
+
   // Safari only allows playback of a media element once it has been
   // played inside a real user-gesture handler; sounds triggered later
   // from the rAF loop (e.g. hitSound on collision, pointSound on score)
@@ -155,6 +163,7 @@
     unlockSound(pointSound);
     unlockSound(jumpSound);
     unlockSound(mermaidSound);
+    unlockSound(bubblePopSound);
     bgSound.play().catch(() => {});
   }
 
@@ -170,7 +179,7 @@
   }
 
   const allNames = [
-    ...FISH_FRAMES, ...BG_NAMES, STONE_BOTTOM, STONE_TOP, SPLASH_NAME, GAMEOVER_NAME, ...RANK_ICONS,
+    ...FISH_FRAMES, ...BG_NAMES, STONE_BOTTOM, STONE_TOP, BUBBLE_NAME, SPLASH_NAME, GAMEOVER_NAME, ...RANK_ICONS,
     ...MERMAID_VARIANTS.flat()
   ];
 
@@ -192,6 +201,7 @@
   const GAP_MIN = 210;
   const GAP_MAX = 270;
   const GAP_MARGIN = 90;         // min distance from top/bottom edges
+  const GAP_MAX_SHIFT = 260;     // max vertical move of the gap between consecutive rocks, so it's always reachable in time even at ROCK_SPAWN_MIN
 
   const MERMAID_W = 160;
   const MERMAID_H = MERMAID_W * (917 / 1173);
@@ -204,6 +214,20 @@
   const MERMAID_FRAME_DURATION = 0.07; // seconds per animation frame
   const MERMAID_HITBOX_INSET_X = MERMAID_W * 0.18;
   const MERMAID_HITBOX_INSET_Y = MERMAID_H * 0.22;
+
+  const BUBBLE_ASPECT = 1254 / 1280;
+  const BUBBLE_W = 150;                // size while floating free, before being caught
+  const BUBBLE_H = BUBBLE_W * BUBBLE_ASPECT;
+  const BUBBLE_SPEED_MIN = 50;         // px/s - slow drift
+  const BUBBLE_SPEED_MAX = 90;         // px/s
+  const BUBBLE_SPAWN_MIN = 20;         // seconds
+  const BUBBLE_SPAWN_MAX = 40;         // seconds
+  const BUBBLE_Y_JITTER = 180;         // px of random offset around vertical center
+  const BUBBLE_HITBOX_INSET_X = BUBBLE_W * 0.12;
+  const BUBBLE_HITBOX_INSET_Y = BUBBLE_H * 0.12;
+  const SHIELD_DURATION_MIN = 10;      // seconds the fish rides the bubble, immune
+  const SHIELD_DURATION_MAX = 20;      // seconds
+  const SHIELD_BUBBLE_SCALE = 2.2;     // bubble size around the fish while riding, relative to FISH_W
 
   const BG_SCROLL_SPEED = 45;    // px/s
   const BG_CHANGE_MIN_MS = 90000;  // 2min - 30s
@@ -223,6 +247,9 @@
     deadAt: 0,
     mermaid: { active: false, x: 0, y: 0, speed: 0, variant: 0, frame: 0, frameTimer: 0 },
     mermaidSpawnTimer: 0,
+    bubble: { active: false, x: 0, y: 0, speed: 0 },
+    bubbleSpawnTimer: 0,
+    shield: { active: false, timer: 0 },
     bg: {
       order: [],
       currentIdx: 0,
@@ -252,6 +279,20 @@
       : bottomMin + Math.random() * (bottomMax - bottomMin);
   }
 
+  function randomBubbleInterval() {
+    return BUBBLE_SPAWN_MIN + Math.random() * (BUBBLE_SPAWN_MAX - BUBBLE_SPAWN_MIN);
+  }
+
+  // Roughly centered vertically, with some random jitter.
+  function randomBubbleY() {
+    const centerY = LH / 2 - BUBBLE_H / 2;
+    return centerY + (Math.random() * 2 - 1) * BUBBLE_Y_JITTER;
+  }
+
+  function randomShieldDuration() {
+    return SHIELD_DURATION_MIN + Math.random() * (SHIELD_DURATION_MAX - SHIELD_DURATION_MIN);
+  }
+
   function resetGame() {
     state.fish.y = FISH_START_Y;
     state.fish.vy = 0;
@@ -268,6 +309,10 @@
     state.mermaid.frameTimer = 0;
     state.mermaidSpawnTimer = randomMermaidInterval();
     stopMermaidSound();
+    state.bubble.active = false;
+    state.bubbleSpawnTimer = randomBubbleInterval();
+    state.shield.active = false;
+    state.shield.timer = 0;
   }
 
   function pickNextBgIndex(excludeIdx) {
@@ -295,7 +340,21 @@
   // ----- Rocks -----
   function spawnRockPair() {
     const gapSize = GAP_MIN + Math.random() * (GAP_MAX - GAP_MIN);
-    const gapTop = GAP_MARGIN + Math.random() * (LH - GAP_MARGIN * 2 - gapSize);
+    const minTop = GAP_MARGIN;
+    const maxTop = LH - GAP_MARGIN - gapSize;
+
+    const prevRock = state.rocks[state.rocks.length - 1];
+    let gapTop;
+    if (prevRock) {
+      // Keep the gap within reach of the previous one, so two rocks never
+      // demand a vertical jump the fish physically can't make in time.
+      const lo = Math.max(minTop, prevRock.gapTop - GAP_MAX_SHIFT);
+      const hi = Math.max(lo, Math.min(maxTop, prevRock.gapTop + GAP_MAX_SHIFT));
+      gapTop = lo + Math.random() * (hi - lo);
+    } else {
+      gapTop = minTop + Math.random() * (maxTop - minTop);
+    }
+
     const gapBottom = gapTop + gapSize;
     state.rocks.push({
       x: LW + ROCK_W,
@@ -359,14 +418,72 @@
     return ax0 < bx1 && ax1 > bx0 && ay0 < by1 && ay1 > by0;
   }
 
+  // ----- Bubble (power-up) -----
+  function checkBubbleCatch() {
+    const bubble = state.bubble;
+    const fx0 = FISH_X + HITBOX_INSET;
+    const fy0 = state.fish.y + HITBOX_INSET;
+    const fx1 = FISH_X + FISH_W - HITBOX_INSET;
+    const fy1 = state.fish.y + FISH_H - HITBOX_INSET;
+    const bx0 = bubble.x + BUBBLE_HITBOX_INSET_X;
+    const by0 = bubble.y + BUBBLE_HITBOX_INSET_Y;
+    const bx1 = bubble.x + BUBBLE_W - BUBBLE_HITBOX_INSET_X;
+    const by1 = bubble.y + BUBBLE_H - BUBBLE_HITBOX_INSET_Y;
+    return rectsOverlap(fx0, fy0, fx1, fy1, bx0, by0, bx1, by1);
+  }
+
+  function updateBubble(dt) {
+    const bubble = state.bubble;
+    if (!bubble.active) {
+      if (!state.shield.active) {
+        state.bubbleSpawnTimer -= dt;
+        if (state.bubbleSpawnTimer <= 0) {
+          bubble.active = true;
+          bubble.x = LW;
+          bubble.y = randomBubbleY();
+          bubble.speed = BUBBLE_SPEED_MIN + Math.random() * (BUBBLE_SPEED_MAX - BUBBLE_SPEED_MIN);
+        }
+      }
+      return;
+    }
+
+    bubble.x -= bubble.speed * dt;
+
+    if (checkBubbleCatch()) {
+      bubble.active = false;
+      state.bubbleSpawnTimer = randomBubbleInterval();
+      state.shield.active = true;
+      state.shield.timer = randomShieldDuration();
+      playBubblePopSound();
+      return;
+    }
+
+    if (bubble.x + BUBBLE_W < 0) {
+      bubble.active = false;
+      state.bubbleSpawnTimer = randomBubbleInterval();
+    }
+  }
+
+  function updateShield(dt) {
+    if (!state.shield.active) return;
+    state.shield.timer -= dt;
+    if (state.shield.timer <= 0) {
+      state.shield.active = false;
+      state.shield.timer = 0;
+    }
+  }
+
   function checkCollisions() {
     const fx0 = FISH_X + HITBOX_INSET;
     const fy0 = state.fish.y + HITBOX_INSET;
     const fx1 = FISH_X + FISH_W - HITBOX_INSET;
     const fy1 = state.fish.y + FISH_H - HITBOX_INSET;
 
-    if (fy0 <= 0 || fy1 >= LH) {
-      return "boundary";
+    if (fy1 >= LH) {
+      return "floor";
+    }
+    if (fy0 <= 0) {
+      return "ceiling";
     }
 
     for (const rock of state.rocks) {
@@ -432,9 +549,11 @@
       updateFish(dt);
       updateRocks(dt);
       updateMermaid(dt);
+      updateBubble(dt);
+      updateShield(dt);
       state.playTime += dt;
       const collision = checkCollisions();
-      if (collision) {
+      if (collision && (collision === "floor" || !state.shield.active)) {
         if (collision === "rock" || collision === "mermaid") playHitSound();
         if (state.mermaid.active) stopMermaidSound();
         state.mode = "dead";
@@ -497,6 +616,26 @@
     const img = images[frames[state.mermaid.frame]];
     if (!img || !img.complete) return;
     ctx.drawImage(img, state.mermaid.x, state.mermaid.y, MERMAID_W, MERMAID_H);
+  }
+
+  function drawBubble() {
+    if (!state.bubble.active) return;
+    const img = images[BUBBLE_NAME];
+    if (!img || !img.complete) return;
+    ctx.drawImage(img, state.bubble.x, state.bubble.y, BUBBLE_W, BUBBLE_H);
+  }
+
+  // Bubble riding along with the fish while the shield is active - drawn
+  // behind the fish so the fish reads as sitting inside it.
+  function drawShieldBubble() {
+    if (!state.shield.active) return;
+    const img = images[BUBBLE_NAME];
+    if (!img || !img.complete) return;
+    const w = FISH_W * SHIELD_BUBBLE_SCALE;
+    const h = w * BUBBLE_ASPECT;
+    const cx = FISH_X + FISH_W / 2;
+    const cy = state.fish.y + FISH_H / 2;
+    ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
   }
 
   function drawFish() {
@@ -670,6 +809,8 @@
     drawBackground();
     drawRocks();
     drawMermaid();
+    drawBubble();
+    drawShieldBubble();
     drawFish();
     drawHud();
 
