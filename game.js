@@ -199,7 +199,7 @@
   const MERMAID_SPEED_MAX = 320;      // px/s
   const MERMAID_SPAWN_MIN = 10;       // seconds
   const MERMAID_SPAWN_MAX = 30;       // seconds
-  const MERMAID_MARGIN = 60;          // min distance from top/bottom edges for her fixed height
+  const MERMAID_MARGIN = 150;         // min distance from top/bottom edges for her fixed height
   const MERMAID_CENTER_GAP = 0.2;     // fraction of screen height kept clear around the middle
   const MERMAID_FRAME_DURATION = 0.07; // seconds per animation frame
   const MERMAID_HITBOX_INSET_X = MERMAID_W * 0.18;
